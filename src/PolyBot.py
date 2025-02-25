@@ -1,12 +1,13 @@
 import os
 import json
+import csv
 from dotenv import load_dotenv
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import ApiCreds
 from py_clob_client.constants import AMOY
 
 def display_header():
-    """Displays the ASCII art header for PolyBot."""
+    """Displays the ASCII art header."""
     print(r"""
  ____  _____  __    _  _  ____  _____  ____ 
 (  _ \(  _  )(  )  ( \/ )(  _ \(  _  )(_  _)
@@ -14,65 +15,74 @@ def display_header():
 (__)  (_____)(____) (__) (____/(_____) (__)               
 """)
 
-def retrieve_markets(client):
-    """Retrieves and displays active markets from the Polymarket CLOB API."""
-    print("Fetching data...")
+def retrieve_market(client):
+    """
+    Retrieves market data using client.get_sampling_markets(), extracts:
+      - market_slug
+      - end_date_iso
+      - for each token: token_id, outcome, price
+    and writes the data into a CSV file named 'Market_data.csv'.
+    """
+    print("Fetching market data using get_sampling_markets() ...")
     try:
-        response = client.get_simplified_markets()
+        # Retrieve the data from the API
+        response = client.get_sampling_markets()
 
-        # Debug: Check response type
+        # If response is a JSON string, convert it to a Python object.
         if isinstance(response, str):
-            markets = json.loads(response)
-        else:
-            markets = response
+            try:
+                response = json.loads(response)
+            except json.JSONDecodeError as jde:
+                print("Failed to parse API response as JSON:", jde)
+                return
 
-        if not isinstance(markets, list):
+        # Process response to extract a list of markets.
+        markets = []
+        if isinstance(response, list):
+            markets = response
+        elif isinstance(response, dict):
+            # Check for common keys that may hold the list of markets
+            if "markets" in response and isinstance(response["markets"], list):
+                markets = response["markets"]
+            elif "data" in response and isinstance(response["data"], list):
+                markets = response["data"]
+            else:
+                # If the dict doesn't hold a list, wrap it in a list.
+                markets = [response]
+        else:
             print("Unexpected response format from API")
             return
 
-        active_markets = []
-        for market in markets:
-            if isinstance(market, dict) and market.get('active', False):
-                active_markets.append(market)
+        # Prepare CSV file for writing
+        csv_file = "market_data.csv"
+        with open(csv_file, mode="w", newline="") as file:
+            writer = csv.writer(file)
+            # Write header row
+            writer.writerow(["Event", "Market End", "CONDITION_ID", "Token_ID", "Outcome", "Price"])
 
-        print(f"Found {len(active_markets)} active markets.")
-        print(f"{'Question':<50} {'Slug':<30} {'End Date':<10} {'Yes Price':<10} {'No Price':<10}")
+            # Loop through each market and extract the needed data.
+            for market in markets:
+                market_slug = market.get("market_slug", "N/A")
+                condition_id = market.get("condition_id", "N/A")
+                end_date = market.get("end_date_iso", "N/A")
+                tokens = market.get("tokens", [])
+                # Write one row per token in this market
+                for token in tokens:
+                    token_id = token.get("token_id", "N/A")
+                    outcome = token.get("outcome", "N/A")
+                    price = token.get("price", "N/A")
+                    writer.writerow([market_slug, end_date, condition_id, token_id, outcome, price])
 
-        for market in active_markets:
-            try:
-                question = market.get('question', 'N/A')
-                question = question[:47] + '...' if len(question) > 50 else question
-
-                slug = market.get('market_slug', 'N/A')
-                slug = slug[:27] + '...' if len(slug) > 30 else slug
-
-                end_date = market.get('end_date_iso', 'N/A')[:10]
-
-                prices = {'Yes': None, 'No': None}
-                for token in market.get('tokens', []):
-                    outcome = token.get('outcome')
-                    if outcome in prices:
-                        prices[outcome] = token.get('price')
-
-                print(f"{question:<50} {slug:<30} {end_date:<10} "
-                      f"{prices['Yes']:<10.4f if prices['Yes'] else 'N/A':<10} "
-                      f"{prices['No']:<10.4f if prices['No'] else 'N/A':<10}")
-
-            except Exception as market_error:
-                print(f"Error processing market: {str(market_error)}")
-                continue
-
-    except json.JSONDecodeError:
-        print("Failed to parse API response")
+        print(f"Market data successfully written to '{csv_file}'.")
     except Exception as e:
         print(f"API request failed: {str(e)}")
 
 def main():
-    """Main function to run the PolyBot CLI."""
+    """Main function to run the CLI."""
     try:
         load_dotenv()
 
-        # Verify environment variables
+        # Verify required environment variables
         required_vars = [
             "POLYMARKET_HOST",
             "POLYMARKET_KEY",
@@ -80,7 +90,6 @@ def main():
             "POLYMARKET_API_SECRET",
             "POLYMARKET_API_PASSPHRASE"
         ]
-
         missing_vars = [var for var in required_vars if not os.getenv(var)]
         if missing_vars:
             raise ValueError(f"Missing environment variables: {', '.join(missing_vars)}")
@@ -101,15 +110,21 @@ def main():
 
         while True:
             print("\nOptions:")
-            print("1. Retrieve Markets")
+            print("1. Retrieve Market")
             print("2. Exit")
+            print("3. Testing")
             choice = input("Select an option: ").strip()
 
             if choice == '1':
-                retrieve_markets(client)
+                retrieve_market(client)
             elif choice == '2':
                 print("Exiting...")
                 break
+            elif choice == '3':
+                response = client.get_sampling_markets()
+                print("Response type:", type(response))
+                # not needed rn
+                # print("Response content:", response)
             else:
                 print("Invalid option. Please try again.")
 
