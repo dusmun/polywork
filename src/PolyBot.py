@@ -1,5 +1,4 @@
 import os
-import json
 import csv
 from dotenv import load_dotenv
 from py_clob_client.client import ClobClient
@@ -14,58 +13,6 @@ def display_header():
  )___/ )(_)(  )(__  \  /  ) _ < )(_)(   )(  
 (__)  (_____)(____) (__) (____/(_____) (__)               
 """)
-
-def retrieve_markets(client):
-    """Retrieves and displays active markets from the Polymarket CLOB API in a structured way."""
-    print("Fetching structured market data...")
-    try:
-        response = client.get_simplified_markets()
-        # Falls die API einen JSON-String zurückgibt
-        if isinstance(response, str):
-            markets = json.loads(response)
-        else:
-            markets = response
-
-        if not isinstance(markets, list):
-            print("Unexpected response format from API")
-            return
-
-        active_markets = []
-        for market in markets:
-            if isinstance(market, dict) and market.get('active', False):
-                active_markets.append(market)
-
-        print(f"Found {len(active_markets)} active markets.")
-        print(f"{'Question':<50} {'Slug':<30} {'End Date':<10} {'Yes Price':<10} {'No Price':<10}")
-
-        for market in active_markets:
-            try:
-                question = market.get('question', 'N/A')
-                question = question[:47] + '...' if len(question) > 50 else question
-
-                slug = market.get('market_slug', 'N/A')
-                slug = slug[:27] + '...' if len(slug) > 30 else slug
-
-                end_date = market.get('end_date_iso', 'N/A')[:10]
-
-                prices = {'Yes': None, 'No': None}
-                for token in market.get('tokens', []):
-                    outcome = token.get('outcome')
-                    if outcome in prices:
-                        prices[outcome] = token.get('price')
-
-                yes_price = f"{prices['Yes']:.4f}" if prices['Yes'] is not None else 'N/A'
-                no_price = f"{prices['No']:.4f}" if prices['No'] is not None else 'N/A'
-                print(f"{question:<50} {slug:<30} {end_date:<10} {yes_price:<10} {no_price:<10}")
-
-            except Exception as market_error:
-                print(f"Error processing market: {str(market_error)}")
-                continue
-
-    except json.JSONDecodeError:
-        print("Failed to parse API response")
-    except Exception as e:
-        print(f"API request failed: {str(e)}")
 
 def display_api_calls(client):
     """Calls various API methods and prints their raw outputs without additional data structuring."""
@@ -131,98 +78,144 @@ def filter_markets(client):
 
 def fetch_info_from_url(client):
     """
-    Neue Funktion 2: Ermöglicht das Einfügen eines Polymarket-Links.
-      - Extrahiert den event_slug aus der URL.
-      - Sucht den entsprechenden Markt.
-      - Ruft über die condition_id den vollständigen Markt ab.
-      - Schreibt ausgewählte Informationen in eine CSV-Datei (Dateiname = event_slug.csv).
+    Extrahiert Marktdaten direkt aus der CLOB API unter Verwendung des Event-Links
+    durch Kombination von get_markets() und get_sampling_simplified_markets()
     """
-    url = input("Paste URL: ").strip()
-    if "polymarket.com/event/" not in url:
-        print("Ungültige URL.")
-        return
-    try:
-        event_slug = url.split("/event/")[1]
-    except IndexError:
-        print("Fehler beim Extrahieren des event_slug.")
-        return
+    print("\n--- Polymarket Link Analysis ---")
+    url = input("Bitte geben Sie den vollständigen Polymarket-Event-Link ein: ").strip()
 
     try:
-        sampling_response = client.get_sampling_markets()
-        if isinstance(sampling_response, dict) and "data" in sampling_response:
-            markets = sampling_response["data"]
-        elif isinstance(sampling_response, list):
-            markets = sampling_response
-        else:
-            markets = []
+        # Schritt 1: Extrahiere Slug aus der URL
+        if "polymarket.com/event/" not in url:
+            print("Ungültiges URL-Format")
+            return
+
+        slug = url.split("/event/")[-1].split("?")[0].split("#")[0]
+        print(f"Analysiere Slug: {slug}")
+
+        # Schritt 2: Finde condition_id über get_markets()
+        print("Durchsuche Märkte...")
+        target_condition_id = None
+        next_cursor = ""
+
+        while True:
+            markets_response = client.get_markets(next_cursor=next_cursor)
+            markets = markets_response.get("data", [])
+
+            for market in markets:
+                if market.get("market_slug") == slug or market.get("event_slug") == slug:
+                    target_condition_id = market["condition_id"]
+                    break
+
+            if target_condition_id or not markets_response.get("next_cursor"):
+                break
+
+            next_cursor = markets_response["next_cursor"]
+
+        if not target_condition_id:
+            print(f"Kein Markt mit Slug '{slug}' gefunden")
+            return
+
+        # Schritt 3: Hole detaillierte Daten von beiden Endpoints
+        detailed_market = client.get_market(target_condition_id).get("market", {})
+        simplified_markets = client.get_sampling_simplified_markets().get("data", [])
+        simplified_data = next((m for m in simplified_markets if m["condition_id"] == target_condition_id), {})
+
+        # Datenkonsolidierung
+        market_data = {
+            # Basisinformationen
+            "condition_id": target_condition_id,
+            "slug": slug,
+            "question": detailed_market.get("question", "N/A"),
+            "category": detailed_market.get("category", "N/A"),
+            "end_date": detailed_market.get("end_date_iso", "N/A")[:10],
+
+            # Handelsdaten
+            "yes_price": next((t["price"] for t in simplified_data.get("tokens", []) if t["outcome"] == "Yes"), "N/A"),
+            "no_price": next((t["price"] for t in simplified_data.get("tokens", []) if t["outcome"] == "No"), "N/A"),
+
+            # Rewards
+            "min_size": simplified_data.get("rewards", {}).get("min_size", "N/A"),
+            "max_spread": simplified_data.get("rewards", {}).get("max_spread", "N/A"),
+            "daily_reward": simplified_data.get("rewards", {}).get("rates", [{}])[0].get("rewards_daily_rate", "N/A"),
+
+            # Status
+            "active": simplified_data.get("active", False),
+            "closed": simplified_data.get("closed", False),
+            "accepting_orders": simplified_data.get("accepting_orders", False)
+        }
+
+        # CSV-Export
+        filename = f"polymarket_{slug}.csv"
+        with open(filename, "w", newline="", encoding="utf-8") as csvfile:
+            fieldnames = [
+                'condition_id', 'slug', 'question', 'category', 'end_date',
+                'yes_price', 'no_price', 'min_size', 'max_spread', 'daily_reward',
+                'active', 'closed', 'accepting_orders'
+            ]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerow(market_data)
+
+        print(f"\n✅ Erfolgreich gespeichert als: {filename}")
+        print("Enthaltene Daten:")
+        for key, value in market_data.items():
+            print(f"{key:>15}: {value}")
+
     except Exception as e:
-        print(f"Fehler beim Abrufen der Märkte: {str(e)}")
-        return
+        print(f"\n❌ Fehler: {str(e)}")
 
-    matched_market = None
-    for m in markets:
-        if m.get("event_slug", "").lower() == event_slug.lower():
-            matched_market = m
-            break
 
-    if not matched_market:
-        print("Kein Markt mit diesem event_slug gefunden.")
-        return
-
-    condition_id = matched_market.get("condition_id")
-    try:
-        full_market = client.get_market(condition_id)
-    except Exception as e:
-        print(f"Fehler beim Abrufen des Marktes: {str(e)}")
-        return
-
-    filename = f"{event_slug}.csv"
-    with open(filename, "w", newline="", encoding="utf-8") as csvfile:
-        csvwriter = csv.writer(csvfile)
-        # Hier werden nur die wichtigsten Infos abgespeichert; passe die Spalten nach Bedarf an
-        csvwriter.writerow(["condition_id", "question", "description", "market_slug", "end_date_iso"])
-        row = [
-            full_market.get("condition_id", "N/A"),
-            full_market.get("question", "N/A"),
-            full_market.get("description", "N/A"),
-            full_market.get("market_slug", "N/A"),
-            full_market.get("end_date_iso", "N/A")[:10] if full_market.get("end_date_iso") else "N/A"
-        ]
-        csvwriter.writerow(row)
-    print(f"Markt-Infos wurden in '{filename}' gespeichert.")
-
-def generate_link_from_condition(client):
+def filter_for_info(client):
     """
-    Generiert einen Polymarket-Link basierend auf einer condition_id.
-    Verwendet client.get_sampling_markets(), um die Daten zu holen.
     """
     condition_id = input("Bitte condition_id eingeben: ").strip()
+
     try:
-        sampling_response = client.get_sampling_markets()
-        # Verarbeite die API-Response
-        if isinstance(sampling_response, dict) and "data" in sampling_response:
-            markets = sampling_response["data"]
-        elif isinstance(sampling_response, list):
-            markets = sampling_response
+        print(client.get_market(condition_id))
+    except Exception as e:
+        print(f"\n❌ Fehler: {str(e)}")
+
+def fetch_all_market_data(client):
+    """Fetches Event, Market End, CONDITION_ID, Token_ID, Outcome, Price for all markets and saves to CSV."""
+    try:
+        # Fetch market data from the API
+        response = client.get_sampling_markets()
+
+        # Handle different possible response formats
+        if isinstance(response, dict) and "data" in response:
+            markets = response["data"]
+        elif isinstance(response, list):
+            markets = response
         else:
             markets = []
+            print("No market data received from API.")
+            return
+
+        # Open CSV file for writing
+        with open("all_market_data.csv", "w", newline="", encoding="utf-8") as csvfile:
+            csvwriter = csv.writer(csvfile)
+            # Write header row
+            csvwriter.writerow(["Event", "Market End", "CONDITION_ID", "Token_ID", "Outcome", "Price"])
+
+            # Process each market and its tokens
+            for market in markets:
+                event = market.get("market_slug", "N/A")
+                market_end = market.get("end_date_iso", "N/A")
+                condition_id = market.get("condition_id", "N/A")
+                tokens = market.get("tokens", [])
+
+                # Write a row for each token in the market
+                for token in tokens:
+                    token_id = token.get("token_id", "N/A")
+                    outcome = token.get("outcome", "N/A")
+                    price = token.get("price", "N/A")
+                    csvwriter.writerow([event, market_end, condition_id, token_id, outcome, price])
+
+        print("Data successfully saved to the CSV file.'")
+
     except Exception as e:
-        print(f"Fehler beim Abrufen der Märkte: {str(e)}")
-        return
-
-    # Suche den Markt mit der condition_id
-    found_market = next((m for m in markets if m.get("condition_id") == condition_id), None)
-    if not found_market:
-        print(f"Kein Markt mit der condition_id '{condition_id}' gefunden.")
-        return
-
-    event_slug = found_market.get("event_slug")
-    if not event_slug:
-        print("event_slug nicht gefunden.")
-        return
-
-    link = f"https://polymarket.com/event/{event_slug}"
-    print(f"Generierter Link: {link}")
+        print(f"Error fetching market data: {str(e)}")
 
 def main():
     """Main function to run the PolyBot CLI."""
@@ -259,10 +252,10 @@ def main():
             print("\nOptions:")
             print("1. Retrieve Market (Filter: Enddatum / Stichwort)")
             print("2. Fetch info (via Polymarket Link)")
-            print("3. Link Generator (via condition_id)")
-            print("4. Retrieve Structured Markets (Standard)")
-            print("5. Call API Methods (Raw Output)")
-            print("6. Exit")
+            print("3. Filter (via condition_id)")
+            print("4. Call API Methods (Raw Output)")
+            print("5. Fetch All Market Data")  # New option added
+            print("6. Exit")  # Exit shifted to option 6
             choice = input("Select an option: ").strip()
 
             if choice == '1':
@@ -270,11 +263,11 @@ def main():
             elif choice == '2':
                 fetch_info_from_url(client)
             elif choice == '3':
-                generate_link_from_condition(client)
+                filter_for_info(client)
             elif choice == '4':
-                retrieve_markets(client)
-            elif choice == '5':
                 display_api_calls(client)
+            elif choice == '5':
+                fetch_all_market_data(client)
             elif choice == '6':
                 print("Exiting...")
                 break
