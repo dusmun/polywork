@@ -3,11 +3,11 @@ import os
 os.environ.setdefault('TERM', 'xterm-256color')
 import csv
 import sys
+from datetime import datetime
 from dotenv import load_dotenv
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import ApiCreds
 from py_clob_client.constants import AMOY
-
 
 def clear_screen():
     """Clears the terminal screen."""
@@ -30,8 +30,69 @@ def pause():
     """Pauses the execution until the user presses Enter."""
     input("\nEnter für Hauptmenü drücken...")
 
+def format_number(value: str) -> str:
+    """Formats numeric strings with thousands separators."""
+    try:
+        num = float(value)
+        return f"{num:,.2f}"
+    except ValueError:
+        return value
+
+def display_orderbook_table(orders: list, order_type: str) -> None:
+    """Displays bids/asks in a formatted table."""
+    print(f"\n{' ' * 16}{order_type.upper()} ORDERS")
+    print(f"{'Preis':<12} | {'Menge':<14} | {'Liquidität':<14}")
+    print("-" * 45)
+    for order in orders[:10]:  # Show top 10 orders
+        price = format_number(order.price)
+        size = format_number(order.size)
+        liquidity = float(order.price) * float(order.size)
+        print(f"{price:<12} | {size:<14} | {format_number(str(liquidity)):<14}")
+
+def retrieve_orderbook(client):
+    """Displays detailed orderbook analysis with market depth visualization."""
+    clear_screen()
+    display_header()
+
+    try:
+        token_id = input("Bitte tokenID eingeben: ").strip()
+        orderbook = client.get_order_book(token_id)
+
+        # Metadata Section
+        print(f"\n{' MARKET ANALYSIS ':=^50}")
+        print(f"Asset ID: {orderbook.asset_id}")
+        print(f"Timestamp: {datetime.fromtimestamp(int(orderbook.timestamp)/1000):%Y-%m-%d %H:%M:%S}")
+        print(f"Market Hash: {orderbook.hash[:12]}...{orderbook.hash[-12:]}\n")
+
+        # Process orders
+        sorted_bids = sorted(orderbook.bids, key=lambda x: float(x.price), reverse=True)
+        sorted_asks = sorted(orderbook.asks, key=lambda x: float(x.price))
+
+        # Best Prices Section
+        best_bid = float(sorted_bids[0].price) if sorted_bids else 0
+        best_ask = float(sorted_asks[0].price) if sorted_asks else 0
+        spread = best_ask - best_bid if best_bid and best_ask else 0
+
+        print(f"{' Best Bid ':-^23} | {' Best Ask ':-^23} | {' Spread ':-^15}")
+        print(f"{best_bid:^20.4f} | {best_ask:^20.4f} | {spread:^13.4f}")
+
+        # Orderbook Visualization
+        display_orderbook_table(sorted_bids, "Bid")
+        display_orderbook_table(sorted_asks, "Ask")
+
+        # Liquidity Analysis
+        total_bid_liquidity = sum(float(b.price) * float(b.size) for b in sorted_bids)
+        total_ask_liquidity = sum(float(a.price) * float(a.size) for a in sorted_asks)
+        print(f"\n{' LIQUIDITY ':=^50}")
+        print(f"Total Bid Liquidity: {format_number(str(total_bid_liquidity))} ETH")
+        print(f"Total Ask Liquidity: {format_number(str(total_ask_liquidity))} ETH")
+
+    except Exception as e:
+        print(f"\nError: {str(e)}")
+    pause()
+
 def display_api_calls(client):
-    """Calls various API methods and prints their raw outputs without additional data structuring."""
+    """Calls various API methods and prints their raw outputs."""
     print("Rufe API-Endpunkte auf und zeige rohe Antworten an...\n")
     try:
         print("\nclient.get_sampling_markets():")
@@ -41,9 +102,7 @@ def display_api_calls(client):
     pause()
 
 def filter_markets(client):
-    """
-    Filtert Märkte nach Enddatum oder Stichwort.
-    """
+    """Filters markets by end date or keyword."""
     clear_screen()
     display_header()
     print("Filterkriterien:")
@@ -53,12 +112,7 @@ def filter_markets(client):
 
     try:
         sampling_response = client.get_sampling_markets()
-        if isinstance(sampling_response, dict) and "data" in sampling_response:
-            markets = sampling_response["data"]
-        elif isinstance(sampling_response, list):
-            markets = sampling_response
-        else:
-            markets = []
+        markets = sampling_response.get("data", []) if isinstance(sampling_response, dict) else sampling_response
     except Exception as e:
         print(f"Fehler beim Abrufen der Märkte: {str(e)}")
         pause()
@@ -66,8 +120,16 @@ def filter_markets(client):
 
     if option == "1":
         date_filter = input("Bitte geben Sie das Enddatum ein (YYYY-MM-DD): ").strip()
-        constructed_date = f"{date_filter}T00:00:00Z"
-        filtered = [m for m in markets if m.get("end_date_iso") == constructed_date]
+        date_filter = datetime.strptime(date_filter, "%Y-%m-%d").date()
+
+        filtered = []
+
+        for m in markets:
+            date = m.get("end_date_iso")
+            if date:
+                date = datetime.strptime(date[:10], "%Y-%m-%d").date()
+                if date_filter >= date >= datetime.now().date():
+                    filtered.append(m)
 
         if not filtered:
             print("Keine Märkte mit diesem Enddatum gefunden.")
@@ -99,9 +161,7 @@ def filter_markets(client):
     pause()
 
 def fetch_info_from_url(client):
-    """
-    Extrahiert Marktdaten direkt aus der CLOB API mithilfe des Polymarket-Event-Links.
-    """
+    """Extracts market data from Polymarket event link."""
     clear_screen()
     display_header()
     print("--- Polymarket Link Analyse ---")
@@ -174,7 +234,7 @@ def fetch_info_from_url(client):
     pause()
 
 def filter_for_info(client):
-    """Filtert Informationen über condition_id."""
+    """Filters information by condition_id."""
     clear_screen()
     display_header()
     condition_id = input("Bitte condition_id eingeben: ").strip()
@@ -191,11 +251,9 @@ def fetch_all_market_data(client):
     display_header()
     try:
         response = client.get_sampling_markets()
-        if isinstance(response, dict) and "data" in response:
-            markets = response["data"]
-        elif isinstance(response, list):
-            markets = response
-        else:
+        markets = response.get("data", []) if isinstance(response, dict) else response
+
+        if not markets:
             print("Keine Marktdaten von der API erhalten.")
             pause()
             return
@@ -254,7 +312,8 @@ def main():
             print("3. Filtern via condition_id")
             print("4. API-Endpunkte (Rohdaten)")
             print("5. Alle Marktdaten abrufen")
-            print("6. Beenden")
+            print("6. Orderbook analysieren")
+            print("7. Beenden")
             choice = input("Option wählen: ").strip()
 
             if choice == '1':
@@ -268,6 +327,8 @@ def main():
             elif choice == '5':
                 fetch_all_market_data(client)
             elif choice == '6':
+                retrieve_orderbook(client)
+            elif choice == '7':
                 print("Programm wird beendet...")
                 sys.exit(0)
             else:

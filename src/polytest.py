@@ -120,8 +120,17 @@ def filter_markets(client):
 
     if option == "1":
         date_filter = input("Bitte geben Sie das Enddatum ein (YYYY-MM-DD): ").strip()
-        constructed_date = f"{date_filter}T00:00:00Z"
-        filtered = [m for m in markets if m.get("end_date_iso") == constructed_date]
+        date_filter = datetime.strptime(date_filter, "%Y-%m-%d").date()
+
+        filtered = []
+
+        for m in markets:
+            date = m.get("end_date_iso")
+            if date:
+                date = datetime.strptime(date[:10], "%Y-%m-%d").date()
+                if date_filter >= date >= datetime.now().date():
+                    print(f"Event: {m.get('market_slug', 'N/A')} | Enddatum: {date}")
+                    filtered.append(m)
 
         if not filtered:
             print("Keine Märkte mit diesem Enddatum gefunden.")
