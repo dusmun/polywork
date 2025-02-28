@@ -16,16 +16,19 @@ def clear_screen():
 def display_header():
     """Displays the ASCII art header for PolyBot."""
     header = r"""
- ____  _____  __    _  _  ____  _____  ____ 
-(  _ \(  _  )(  )  ( \/ )(  _ \(  _  )(_  _)
- )___/ )(_)(  )(__  \  /  ) _ < )(_)(   )(  
-(__)  (_____)(____) (__) (____/(_____) (__)               
+ _______  _______  ___      __   __  _______  _______  _______ 
+|       ||       ||   |    |  | |  ||  _    ||       ||       |
+|    _  ||   _   ||   |    |  |_|  || |_|   ||   _   ||_     _|
+|   |_| ||  | |  ||   |    |       ||       ||  | |  |  |   |  
+|    ___||  |_|  ||   |___ |_     _||  _   | |  |_|  |  |   |  
+|   |    |       ||       |  |   |  | |_|   ||       |  |   |  
+|___|    |_______||_______|  |___|  |_______||_______|  |___|                
 """
     print(header)
 
 def pause():
     """Pauses the execution until the user presses Enter."""
-    input("\nDrücken Sie Enter, um zum Hauptmenü zurückzukehren...")
+    input("\nEnter für Hauptmenü drücken...")
 
 def display_api_calls(client):
     """Calls various API methods and prints their raw outputs without additional data structuring."""
@@ -82,16 +85,15 @@ def filter_markets(client):
             except Exception as e:
                 print(f"Fehler beim Schreiben der CSV-Datei: {str(e)}")
     elif option == "2":
-        keyword = input("Bitte geben Sie das Stichwort ein: ").strip().lower()
+        keyword = input("Stichwort (Filter): ").strip().lower()
         filtered = [m for m in markets if keyword in m.get("market_slug", "").lower()]
         if not filtered:
             print("Keine Märkte mit diesem Stichwort gefunden.")
         else:
             for m in filtered:
-                event_slug = m.get("event_slug", "N/A")
-                link = f"https://polymarket.com/event/{event_slug}"
+                market_slug = m.get("market_slug", "N/A")
                 condition_id = m.get("condition_id", "N/A")
-                print(f"Event: {link} | condition_id: {condition_id}")
+                print(f"Event: {market_slug} | condition_id: {condition_id}")
     else:
         print("Ungültige Auswahl.")
     pause()

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import os
+os.environ.setdefault('TERM', 'xterm-256color')
 import csv
 import sys
 from dotenv import load_dotenv
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import ApiCreds
 from py_clob_client.constants import AMOY
+
 
 def clear_screen():
     """Clears the terminal screen."""
@@ -14,16 +16,19 @@ def clear_screen():
 def display_header():
     """Displays the ASCII art header for PolyBot."""
     header = r"""
- ____  _____  __    _  _  ____  _____  ____ 
-(  _ \(  _  )(  )  ( \/ )(  _ \(  _  )(_  _)
- )___/ )(_)(  )(__  \  /  ) _ < )(_)(   )(  
-(__)  (_____)(____) (__) (____/(_____) (__)               
+ _______  _______  ___      __   __  _______  _______  _______ 
+|       ||       ||   |    |  | |  ||  _    ||       ||       |
+|    _  ||   _   ||   |    |  |_|  || |_|   ||   _   ||_     _|
+|   |_| ||  | |  ||   |    |       ||       ||  | |  |  |   |  
+|    ___||  |_|  ||   |___ |_     _||  _   | |  |_|  |  |   |  
+|   |    |       ||       |  |   |  | |_|   ||       |  |   |  
+|___|    |_______||_______|  |___|  |_______||_______|  |___|                
 """
     print(header)
 
 def pause():
     """Pauses the execution until the user presses Enter."""
-    input("\nDrücken Sie Enter, um zum Hauptmenü zurückzukehren...")
+    input("\nEnter für Hauptmenü drücken...")
 
 def display_api_calls(client):
     """Calls various API methods and prints their raw outputs without additional data structuring."""
@@ -80,16 +85,15 @@ def filter_markets(client):
             except Exception as e:
                 print(f"Fehler beim Schreiben der CSV-Datei: {str(e)}")
     elif option == "2":
-        keyword = input("Bitte geben Sie das Stichwort ein: ").strip().lower()
+        keyword = input("Stichwort (Filter): ").strip().lower()
         filtered = [m for m in markets if keyword in m.get("market_slug", "").lower()]
         if not filtered:
             print("Keine Märkte mit diesem Stichwort gefunden.")
         else:
             for m in filtered:
-                event_slug = m.get("event_slug", "N/A")
-                link = f"https://polymarket.com/event/{event_slug}"
+                market_slug = m.get("market_slug", "N/A")
                 condition_id = m.get("condition_id", "N/A")
-                print(f"Event: {link} | condition_id: {condition_id}")
+                print(f"Event: {market_slug} | condition_id: {condition_id}")
     else:
         print("Ungültige Auswahl.")
     pause()
@@ -161,12 +165,12 @@ def fetch_info_from_url(client):
             writer.writeheader()
             writer.writerow(market_data)
 
-        print(f"\n✅ Daten wurden erfolgreich in '{filename}' gespeichert.")
+        print(f"\n Daten wurden erfolgreich in '{filename}' gespeichert.")
         print("Enthaltene Daten:")
         for key, value in market_data.items():
             print(f"{key:>15}: {value}")
     except Exception as e:
-        print(f"\n❌ Fehler: {str(e)}")
+        print(f" Fehler: {str(e)}")
     pause()
 
 def filter_for_info(client):
@@ -178,7 +182,7 @@ def filter_for_info(client):
     try:
         print(client.get_market(condition_id))
     except Exception as e:
-        print(f"\n❌ Fehler: {str(e)}")
+        print(f" Fehler: {str(e)}")
     pause()
 
 def fetch_all_market_data(client):
@@ -269,7 +273,6 @@ def main():
             else:
                 print("Ungültige Option. Bitte erneut versuchen.")
                 pause()
-
     except ValueError as ve:
         print(f"Konfigurationsfehler: {str(ve)}")
     except Exception as e:
