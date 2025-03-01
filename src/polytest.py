@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 import os
+
 os.environ.setdefault('TERM', 'xterm-256color')
 import csv
 import sys
 from datetime import datetime
 from dotenv import load_dotenv
 from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import ApiCreds
+from py_clob_client.clob_types import ApiCreds, OrderArgs, MarketOrderArgs, OrderType
 from py_clob_client.constants import AMOY
+from py_clob_client.order_builder.constants import BUY
+
 
 def clear_screen():
     """Clears the terminal screen."""
     os.system('cls' if os.name == 'nt' else 'clear')
+
 
 def display_header():
     """Displays the ASCII art header for PolyBot."""
@@ -26,9 +30,11 @@ def display_header():
 """
     print(header)
 
+
 def pause():
     """Pauses the execution until the user presses Enter."""
     input("\nEnter für Hauptmenü drücken...")
+
 
 def format_number(value: str) -> str:
     """Formats numeric strings with thousands separators."""
@@ -37,6 +43,7 @@ def format_number(value: str) -> str:
         return f"{num:,.2f}"
     except ValueError:
         return value
+
 
 def display_orderbook_table(orders: list, order_type: str) -> None:
     """Displays bids/asks in a formatted table."""
@@ -61,7 +68,7 @@ def retrieve_orderbook(client):
         # Metadata Section
         print(f"\n{' MARKET ANALYSIS ':=^50}")
         print(f"Asset ID: {orderbook.asset_id}")
-        print(f"Timestamp: {datetime.fromtimestamp(int(orderbook.timestamp)/1000):%Y-%m-%d %H:%M:%S}")
+        print(f"Timestamp: {datetime.fromtimestamp(int(orderbook.timestamp) / 1000):%Y-%m-%d %H:%M:%S}")
         print(f"Market Hash: {orderbook.hash[:12]}...{orderbook.hash[-12:]}\n")
 
         # Process orders
@@ -91,6 +98,7 @@ def retrieve_orderbook(client):
         print(f"\nError: {str(e)}")
     pause()
 
+
 def display_api_calls(client):
     """Calls various API methods and prints their raw outputs."""
     print("Rufe API-Endpunkte auf und zeige rohe Antworten an...\n")
@@ -100,6 +108,7 @@ def display_api_calls(client):
     except Exception as e:
         print(f"Fehler beim Aufruf der API: {str(e)}")
     pause()
+
 
 def filter_markets(client):
     """Filters markets by end date or keyword."""
@@ -160,6 +169,7 @@ def filter_markets(client):
     else:
         print("Ungültige Auswahl.")
     pause()
+
 
 def fetch_info_from_url(client):
     """Extracts market data from Polymarket event link."""
@@ -278,6 +288,75 @@ def fetch_all_market_data(client):
         print(f"Fehler beim Abrufen der Marktdaten: {str(e)}")
     pause()
 
+
+def create_buy_order(client):
+    """Handles creation of buy orders with FOK, GTC, GTD options."""
+    clear_screen()
+    display_header()
+    print("--- Kauforder erstellen ---\n")
+    print("Wählen Sie den Ordertyp:")
+    print("1. FOK (Market Order)")
+    print("2. GTC (Limit Order)")
+    print("3. GTD (Limit Order mit Ablaufdatum)")
+    print("4. Zurück zum Hauptmenü")
+    order_type_choice = input("Option wählen: ").strip()
+    if order_type_choice == '4':
+        return
+    try:
+        token_id = input("\nToken ID eingeben: ").strip()
+        if order_type_choice == '1':
+            # FOK Market Order
+            amount = float(input("Betrag in USD eingeben: "))
+            order_args = MarketOrderArgs(
+                token_id=token_id,
+                amount=amount,
+                side=BUY,
+            )
+            signed_order = client.create_market_order(order_args)
+            resp = client.post_order(signed_order, OrderType.FOK)
+        elif order_type_choice == '2':
+            # GTC Limit Order
+            price = float(input("Preis pro Token eingeben: "))
+            size = float(input("Anzahl der Token eingeben: "))
+            order_args = OrderArgs(
+                price=price,
+                size=size,
+                side=BUY,
+                token_id=token_id,
+            )
+            signed_order = client.create_order(order_args)
+            resp = client.post_order(signed_order, OrderType.GTC)
+        elif order_type_choice == '3':
+            # GTD Limit Order
+            price = float(input("Preis pro Token eingeben: "))
+            size = float(input("Anzahl der Token eingeben: "))
+            expire_seconds = int(input("Gültigkeitsdauer in Sekunden eingeben: "))
+            expiration = int(datetime.now().timestamp()) + expire_seconds + 60
+            order_args = OrderArgs(
+                price=price,
+                size=size,
+                side=BUY,
+                token_id=token_id,
+                expiration=str(expiration),
+            )
+            signed_order = client.create_order(order_args)
+            resp = client.post_order(signed_order, OrderType.GTD)
+        else:
+            print("Ungültige Auswahl.")
+            pause()
+            return
+        # Display results
+        print("\nAntwort vom Server:")
+        print(f"Erfolg: {resp.get('success', 'N/A')}")
+        print(f"Fehlermeldung: {resp.get('errorMsg', 'Keine')}")
+        print(f"Order ID: {resp.get('orderID', 'N/A')}")
+        print(f"Transaktionshashes: {', '.join(resp.get('transactionsHashes', []))}")
+        print(f"Status: {resp.get('status', 'N/A')}")
+    except Exception as e:
+        print(f"\nFehler beim Erstellen der Order: {str(e)}")
+    pause()
+
+
 def main():
     """Main function to run the PolyBot CLI."""
     try:
@@ -287,21 +366,30 @@ def main():
             "POLYMARKET_KEY",
             "POLYMARKET_API_KEY",
             "POLYMARKET_API_SECRET",
-            "POLYMARKET_API_PASSPHRASE"
+            "POLYMARKET_API_PASSPHRASE",
+            "POLYMARKET_PROXY_ADDRESS"
         ]
         missing_vars = [var for var in required_vars if not os.getenv(var)]
         if missing_vars:
             raise ValueError(f"Fehlende Umgebungsvariablen: {', '.join(missing_vars)}")
 
+        # IMPORTANT:
+        # Trading using your portfolio requires that your proxy wallet (funder) has
+        # approved sufficient USDC allowance for the CLOB exchange contract.
+        # Please ensure that your POLYMARKET_PROXY_ADDRESS has an approved allowance.
+
         client = ClobClient(
             host=os.getenv("POLYMARKET_HOST"),
             key=os.getenv("POLYMARKET_KEY"),
-            chain_id=AMOY,
+            chain_id=137,
             creds=ApiCreds(
                 api_key=os.getenv("POLYMARKET_API_KEY"),
                 api_secret=os.getenv("POLYMARKET_API_SECRET"),
                 api_passphrase=os.getenv("POLYMARKET_API_PASSPHRASE")
-            )
+            ),
+            # Use 2 for Browser Wallet/Proxy (or 1 for Magic/Email login if appropriate)
+            signature_type=1,
+            funder=os.getenv("POLYMARKET_PROXY_ADDRESS")
         )
 
         while True:
@@ -314,7 +402,8 @@ def main():
             print("4. API-Endpunkte (Rohdaten)")
             print("5. Alle Marktdaten abrufen")
             print("6. Orderbook analysieren")
-            print("7. Beenden")
+            print("7. Kauforder erstellen")
+            print("8. Beenden")
             choice = input("Option wählen: ").strip()
 
             if choice == '1':
@@ -330,6 +419,8 @@ def main():
             elif choice == '6':
                 retrieve_orderbook(client)
             elif choice == '7':
+                create_buy_order(client)
+            elif choice == '8':
                 print("Programm wird beendet...")
                 sys.exit(0)
             else:
@@ -340,6 +431,7 @@ def main():
     except Exception as e:
         print(f"Ein kritischer Fehler ist aufgetreten: {str(e)}")
     pause()
+
 
 if __name__ == "__main__":
     main()
