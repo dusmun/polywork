@@ -48,48 +48,44 @@ PolyBot CLI is a command-line interface tool designed to interact with the Polym
 
 - **Python 3.x**
 - **Python Packages:**
-  - `py_clob_client` (for interacting with the Polymarket API)
-  - `python-dotenv` (for loading environment variables)
-  - `colorama` (for colored terminal output)
+  - py_clob_client (for interacting with the Polymarket API)
+  - python-dotenv (for loading environment variables)
+  - colorama (for colored terminal output)
 - **Environment Variables:**
-  - `POLYMARKET_HOST`
-  - `POLYMARKET_KEY`
-  - `POLYMARKET_API_KEY`
-  - `POLYMARKET_API_SECRET`
-  - `POLYMARKET_API_PASSPHRASE`
-  - `POLYMARKET_PROXY_ADDRESS`
+  - POLYMARKET_HOST
+  - POLYMARKET_KEY
+  - POLYMARKET_API_KEY
+  - POLYMARKET_API_SECRET
+  - POLYMARKET_API_PASSPHRASE
+  - POLYMARKET_PROXY_ADDRESS
 
 ---
 
 ## Installation & Setup
 
 1. **Clone the Repository:**
-   ```bash
+   \`\`\`bash
    git clone https://github.com/yourusername/polybot-cli.git
    cd polybot-cli
+   \`\`\`
 
-## Installation
+2. **Install Dependencies:**
+   \`\`\`bash
+   pip install -r requirements.txt
+   \`\`\`
 
-### Install Dependencies
+3. **Configure Environment Variables:**
+   Create a \`.env\` file in the project root and add your Polymarket API credentials:
+   \`\`\`env
+   POLYMARKET_HOST=your_host_url
+   POLYMARKET_KEY=your_key
+   POLYMARKET_API_KEY=your_api_key
+   POLYMARKET_API_SECRET=your_api_secret
+   POLYMARKET_API_PASSPHRASE=your_api_passphrase
+   POLYMARKET_PROXY_ADDRESS=your_proxy_address
+   \`\`\`
 
-Run the following command to install the required dependencies:
-
-\`\`\`bash
-pip install -r requirements.txt
-\`\`\`
-
-### Configure Environment Variables
-
-Create a \`.env\` file in the project root and add your Polymarket API credentials:
-
-\`\`\`env
-POLYMARKET_HOST=your_host_url
-POLYMARKET_KEY=your_key
-POLYMARKET_API_KEY=your_api_key
-POLYMARKET_API_SECRET=your_api_secret
-POLYMARKET_API_PASSPHRASE=your_api_passphrase
-POLYMARKET_PROXY_ADDRESS=your_proxy_address
-\`\`\`
+---
 
 ## Usage
 
@@ -104,8 +100,6 @@ When you run the script, the main menu displays the following options:
 
 ### Retrieve Info
 
-Under the "Retrieve Info" menu you can:
-
 - Filter markets by end date or keyword.
 - Retrieve detailed info from a Polymarket event link.
 - Filter market information by condition ID.
@@ -115,14 +109,14 @@ Under the "Retrieve Info" menu you can:
 
 ### Place Orders
 
-The "Place Orders" menu provides these options:
-
 - **Create Buy Order:** Place a new order by selecting from FOK, GTC, or GTD order types.
 - **Buy Under Maximum Price Order:** Sweep the order book to fill any ask orders below a specified maximum price.
 - **Schedule Order:** Schedule an order for future execution; the order is stored in a CSV file.
 - **Execute Scheduled Orders:** Execute scheduled orders from the CSV file at their designated time.
 - **Run CSV Orders (Immediate Execution):** Execute orders stored in a dedicated CSV file immediately.
 - **Cancel All Outstanding Orders:** Quickly cancel all active orders if needed.
+
+---
 
 ## CSV Orders & Scheduling
 
@@ -140,10 +134,11 @@ The "Place Orders" menu provides these options:
 
 This feature quickly cancels all your open orders to help you react in volatile market conditions or correct any errors.
 
+---
+
 ## CSV Order Format Reference
 
-Below is an example CSV file (\`example_orders.csv\`) with sample orders for all order types:
-
+Example CSV file (\`example_orders.csv\`):
 \`\`\`csv
 token_id,order_type,amount,price,size,expire_seconds
 TOKEN123,FOK,50,,,
@@ -152,7 +147,7 @@ TOKEN789,GTD,,0.12,5,300
 TOKENABC,FOK_MAX,100,0.13,,
 \`\`\`
 
-#### Order Type Breakdown
+### Order Type Breakdown
 
 - **FOK Order:**
   - \`token_id\`: Unique asset identifier.
@@ -178,29 +173,25 @@ TOKENABC,FOK_MAX,100,0.13,,
   - \`amount\`: USD budget to spend.
   - \`price\`: Maximum acceptable price per token.
 
+---
+
 ## Customization
 
-You can extend or modify PolyBot CLI by:
-
-- Adding new order types or adjusting the existing ones.
-- Integrating dynamic order adjustments based on market conditions.
-- Expanding the market data retrieval capabilities.
-- Customizing order execution logic to fit specific trading strategies.
+- Add new order types or adjust existing ones.
+- Integrate dynamic order adjustments based on market conditions.
+- Expand market data retrieval capabilities.
+- Customize order execution logic to fit specific trading strategies.
 
 ---
 
 ## Troubleshooting
 
-### Missing Environment Variables
-Ensure your \`.env\` file is correctly set up with all required variables.
-
-### API Errors
-Verify that your API credentials are valid and that you have network access to the Polymarket host.
-
-### CSV File Issues
-Confirm that the CSV files (\`orders_to_run.csv\` and \`scheduled_tasks.csv\`) are properly formatted and located in the same directory as the script.
+- Ensure your \`.env\` file is correctly set up with all required variables.
+- Verify API credentials and network access.
+- Confirm correct CSV file formatting and location.
 
 ---
 
 ## License
-This project is licensed, msg for details.
+
+This project is licensed. Contact for details.
