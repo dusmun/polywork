@@ -19,7 +19,6 @@ def clear_screen():
     """Clears the terminal screen."""
     os.system('cls' if os.name == 'nt' else 'clear')
 
-
 def display_header():
     """Displays the ASCII art header for PolyBot."""
     header = r"""
@@ -45,7 +44,6 @@ def format_number(value: str) -> str:
     except ValueError:
         return value
 
-
 def display_orderbook_table(orders: list, order_type: str) -> None:
     """Displays bids/asks in a formatted table."""
     print(Fore.MAGENTA + f"\n{' ' * 16}{order_type.upper()} ORDERS")
@@ -61,33 +59,26 @@ def retrieve_orderbook(client):
     """Displays detailed orderbook analysis with market depth visualization."""
     clear_screen()
     display_header()
-
     try:
         token_id = input(Fore.YELLOW + "Enter token ID: ").strip()
         orderbook = client.get_order_book(token_id)
-
         # Metadata Section
         print(Fore.GREEN + f"\n{' MARKET ANALYSIS ':=^50}")
         print(Fore.GREEN + f"Asset ID: {orderbook.asset_id}")
         print(Fore.GREEN + f"Timestamp: {datetime.fromtimestamp(int(orderbook.timestamp) / 1000):%Y-%m-%d %H:%M:%S}")
         print(Fore.GREEN + f"Market Hash: {orderbook.hash[:12]}...{orderbook.hash[-12:]}\n")
-
         # Process orders
         sorted_bids = sorted(orderbook.bids, key=lambda x: float(x.price), reverse=True)
         sorted_asks = sorted(orderbook.asks, key=lambda x: float(x.price))
-
         # Best Prices Section
         best_bid = float(sorted_bids[0].price) if sorted_bids else 0
         best_ask = float(sorted_asks[0].price) if sorted_asks else 0
         spread = best_ask - best_bid if best_bid and best_ask else 0
-
         print(Fore.BLUE + f"{' Best Bid ':-^23} | {' Best Ask ':-^23} | {' Spread ':-^15}")
         print(Fore.BLUE + f"{best_bid:^20.4f} | {best_ask:^20.4f} | {spread:^13.4f}")
-
         # Orderbook Visualization
         display_orderbook_table(sorted_bids, "Bid")
         display_orderbook_table(sorted_asks, "Ask")
-
         # Liquidity Analysis
         total_bid_liquidity = sum(float(b.price) * float(b.size) for b in sorted_bids)
         total_ask_liquidity = sum(float(a.price) * float(a.size) for a in sorted_asks)
@@ -97,7 +88,6 @@ def retrieve_orderbook(client):
     except Exception as e:
         print(Fore.RED + f"\nError: {str(e)}")
     pause()
-
 
 def display_api_calls(client):
     """Calls various API methods and prints their raw outputs."""
@@ -111,7 +101,6 @@ def display_api_calls(client):
         print(Fore.RED + f"Error calling API: {str(e)}")
     pause()
 
-
 def filter_markets(client):
     """Filters markets by end date or keyword."""
     clear_screen()
@@ -120,7 +109,6 @@ def filter_markets(client):
     print(Fore.GREEN + "1. End Date")
     print(Fore.GREEN + "2. Keyword")
     option = input(Fore.YELLOW + "Select an option (1 or 2): ").strip()
-
     try:
         sampling_response = client.get_sampling_markets()
         markets = sampling_response.get("data", []) if isinstance(sampling_response, dict) else sampling_response
@@ -128,7 +116,6 @@ def filter_markets(client):
         print(Fore.RED + f"Error retrieving markets: {str(e)}")
         pause()
         return
-
     if option == "1":
         date_filter = input(Fore.YELLOW + "Enter end date (YYYY-MM-DD): ").strip()
         date_filter = datetime.strptime(date_filter, "%Y-%m-%d").date()
@@ -484,7 +471,6 @@ def run_csv_tasks(client):
         print(Fore.RED + "No CSV tasks found.")
         pause()
         return
-
     # Load tasks
     tasks = []
     try:
@@ -496,12 +482,10 @@ def run_csv_tasks(client):
         print(Fore.RED + f"Error reading CSV file: {str(e)}")
         pause()
         return
-
     if not tasks:
         print(Fore.RED + "No scheduled tasks found.")
         pause()
         return
-
     # Print scheduled tasks overview
     print_scheduled_tasks_overview(tasks)
     print(Fore.GREEN + "Starting task runner. Press Ctrl+C to abort.\n")
@@ -530,6 +514,217 @@ def run_csv_tasks(client):
                 print(Fore.GREEN + "All tasks have been executed.")
     except KeyboardInterrupt:
         print(Fore.RED + "\nTask runner aborted.")
+    pause()
+
+def create_buy_under_max_price(client):
+    """Buy tokens by filling every ask underneath a maximum price."""
+    clear_screen()
+    display_header()
+    print(Fore.GREEN + "--- Buy Under Maximum Price Order ---\n")
+    token_id = input(Fore.YELLOW + "Enter Token ID: ").strip()
+    try:
+        max_price = float(input(Fore.YELLOW + "Enter maximum acceptable price per token: "))
+    except ValueError:
+        print(Fore.RED + "Invalid maximum price.")
+        pause()
+        return
+    try:
+        total_amount = float(input(Fore.YELLOW + "Enter total token amount to buy: "))
+    except ValueError:
+        print(Fore.RED + "Invalid token amount.")
+        pause()
+        return
+    try:
+        # Retrieve the order book for the given token
+        orderbook = client.get_order_book(token_id)
+    except Exception as e:
+        print(Fore.RED + f"Error retrieving order book: {str(e)}")
+        pause()
+        return
+    if not orderbook.asks:
+        print(Fore.RED + "No ask orders available.")
+        pause()
+        return
+    # Sort asks in ascending order (lowest price first)
+    sorted_asks = sorted(orderbook.asks, key=lambda x: float(x.price))
+    remaining = total_amount
+    print(Fore.CYAN + f"\nAttempting to fill {total_amount} tokens with asks <= {max_price}...\n")
+    # Iterate over asks until we either run out or the ask price exceeds max_price.
+    for ask in sorted_asks:
+        ask_price = float(ask.price)
+        if ask_price > max_price:
+            break  # All subsequent asks are above the max price
+        available_size = float(ask.size)
+        if available_size <= 0:
+            continue
+        size_to_buy = min(remaining, available_size)
+        # Create a limit order at the ask price for the determined size
+        order_args = OrderArgs(
+            price=ask_price,
+            size=size_to_buy,
+            side=BUY,
+            token_id=token_id
+        )
+        try:
+            signed_order = client.create_order(order_args)
+            resp = client.post_order(signed_order, OrderType.GTC)
+            print(Fore.GREEN + f"Order placed at {ask_price:.4f} for {size_to_buy} tokens.")
+        except Exception as e:
+            print(Fore.RED + f"Error placing order at price {ask_price:.4f}: {str(e)}")
+        remaining -= size_to_buy
+        if remaining <= 0:
+            break
+    if remaining > 0:
+        print(Fore.YELLOW + f"\nUnfilled amount: {remaining} tokens (insufficient asks under {max_price}).")
+    else:
+        print(Fore.GREEN + "\nOrder successfully filled for the specified amount.")
+    pause()
+
+def run_csv_orders(client):
+    """Executes orders specified in a CSV file immediately for high-speed order execution."""
+    clear_screen()
+    display_header()
+    csv_filename = "orders_to_run.csv"  # Use a dedicated CSV for this purpose
+    if not os.path.isfile(csv_filename):
+        print(Fore.RED + f"No CSV orders found in '{csv_filename}'.")
+        pause()
+        return
+
+    orders = []
+    try:
+        with open(csv_filename, "r", newline="", encoding="utf-8") as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                orders.append(row)
+    except Exception as e:
+        print(Fore.RED + f"Error reading CSV file: {str(e)}")
+        pause()
+        return
+
+    if not orders:
+        print(Fore.RED + "No orders found in CSV.")
+        pause()
+        return
+
+    print(Fore.BLUE + f"Executing {len(orders)} order(s) from CSV...\n")
+    for order in orders:
+        token_id = order.get("token_id")
+        order_type = order.get("order_type", "").upper()
+        try:
+            if order_type == "FOK":
+                # Standard market order without price filtering.
+                amount = float(order.get("amount", 0))
+                order_args = MarketOrderArgs(
+                    token_id=token_id,
+                    amount=amount,
+                    side=BUY,
+                )
+                signed_order = client.create_market_order(order_args)
+                resp = client.post_order(signed_order, OrderType.FOK)
+            elif order_type == "GTC":
+                price = float(order.get("price", 0))
+                size = float(order.get("size", 0))
+                order_args = OrderArgs(
+                    price=price,
+                    size=size,
+                    side=BUY,
+                    token_id=token_id,
+                )
+                signed_order = client.create_order(order_args)
+                resp = client.post_order(signed_order, OrderType.GTC)
+            elif order_type == "GTD":
+                price = float(order.get("price", 0))
+                size = float(order.get("size", 0))
+                expire_seconds = int(order.get("expire_seconds", 0))
+                expiration = int(datetime.now().timestamp()) + expire_seconds + 60
+                order_args = OrderArgs(
+                    price=price,
+                    size=size,
+                    side=BUY,
+                    token_id=token_id,
+                    expiration=str(expiration),
+                )
+                signed_order = client.create_order(order_args)
+                resp = client.post_order(signed_order, OrderType.GTD)
+            elif order_type == "FOK_MAX":
+                # New option: Market order that fills any ask under a max acceptable price
+                # "amount" is the USD budget and "price" is the maximum acceptable price per token.
+                max_price = float(order.get("price", 0))
+                usd_budget = float(order.get("amount", 0))
+                # Retrieve the order book for the token.
+                orderbook = client.get_order_book(token_id)
+                if not orderbook.asks:
+                    print(Fore.RED + f"No ask orders available for token {token_id}.")
+                    continue
+                # Sort asks in ascending order.
+                sorted_asks = sorted(orderbook.asks, key=lambda x: float(x.price))
+                remaining_usd = usd_budget
+                print(Fore.CYAN + f"\nAttempting to spend ${usd_budget:.2f} on token {token_id} with max price ${max_price:.4f}...")
+                for ask in sorted_asks:
+                    ask_price = float(ask.price)
+                    if ask_price > max_price:
+                        break  # Subsequent asks exceed max price.
+                    available_size = float(ask.size)
+                    if available_size <= 0:
+                        continue
+                    # Determine maximum tokens that can be purchased at this ask with remaining USD.
+                    max_tokens = remaining_usd / ask_price
+                    # Buy no more than available tokens.
+                    tokens_to_buy = min(max_tokens, available_size)
+                    if tokens_to_buy <= 0:
+                        continue
+                    # Create a limit order at the ask price for tokens_to_buy.
+                    order_args = OrderArgs(
+                        price=ask_price,
+                        size=tokens_to_buy,
+                        side=BUY,
+                        token_id=token_id
+                    )
+                    try:
+                        signed_order = client.create_order(order_args)
+                        resp = client.post_order(signed_order, OrderType.GTC)
+                        print(Fore.GREEN + f"Order placed at {ask_price:.4f} for {tokens_to_buy:.4f} tokens.")
+                    except Exception as e:
+                        print(Fore.RED + f"Error placing order at price {ask_price:.4f}: {str(e)}")
+                    # Deduct the spent USD amount.
+                    remaining_usd -= tokens_to_buy * ask_price
+                    if remaining_usd <= 0:
+                        break
+                if remaining_usd > 0:
+                    print(Fore.YELLOW + f"\nUnspent USD: ${remaining_usd:.2f} (Not enough asks under ${max_price:.4f}).")
+                else:
+                    print(Fore.GREEN + "\nMarket order under maximum price successfully filled for the specified amount.")
+            else:
+                print(Fore.RED + f"Unknown order type '{order_type}' for token {token_id}. Skipping.")
+                continue
+            print(Fore.GREEN + f"Executed order for token {token_id} | Type: {order_type} | Response: {resp.get('status', 'N/A')}")
+        except Exception as e:
+            print(Fore.RED + f"Error executing order for token {token_id}: {str(e)}")
+    pause()
+
+
+def cancel_all_orders(client):
+    """Cancels all outstanding orders quickly."""
+    clear_screen()
+    display_header()
+    print(Fore.GREEN + "--- Cancel All Outstanding Orders ---\n")
+    try:
+        # Retrieve open orders. Adjust the API call if necessary.
+        open_orders = client.get_open_orders()  # Hypothetical function; use your client's actual method.
+        if not open_orders:
+            print(Fore.YELLOW + "No outstanding orders found.")
+        else:
+            for order in open_orders:
+                order_id = order.get("orderID") or order.get("order_id")
+                if order_id:
+                    try:
+                        resp = client.cancel_order(order_id)
+                        print(Fore.GREEN + f"Canceled order {order_id}: {resp.get('status', 'Unknown')}")
+                    except Exception as e:
+                        print(Fore.RED + f"Error canceling order {order_id}: {str(e)}")
+            print(Fore.GREEN + "\nAll outstanding orders have been canceled.")
+    except Exception as e:
+        print(Fore.RED + f"Error retrieving open orders: {str(e)}")
     pause()
 
 def info_menu(client):
@@ -571,17 +766,26 @@ def order_menu(client):
         display_header()
         print(Fore.GREEN + "Place Orders Menu:")
         print(Fore.GREEN + "1. Create Buy Order")
-        print(Fore.GREEN + "2. Schedule Order")
-        print(Fore.GREEN + "3. Execute Scheduled Orders")
-        print(Fore.GREEN + "4. Back to Main Menu")
+        print(Fore.GREEN + "2. Buy Under Maximum Price Order")
+        print(Fore.GREEN + "3. Schedule Order")
+        print(Fore.GREEN + "4. Execute Scheduled Orders")
+        print(Fore.GREEN + "5. Run CSV Orders (Immediate Execution)")
+        print(Fore.GREEN + "6. Cancel All Outstanding Orders")
+        print(Fore.GREEN + "7. Back to Main Menu")
         choice = input(Fore.YELLOW + "Select option: ").strip()
         if choice == '1':
             create_buy_order(client)
         elif choice == '2':
-            schedule_task(client)
+            create_buy_under_max_price(client)
         elif choice == '3':
-            run_csv_tasks(client)
+            schedule_task(client)
         elif choice == '4':
+            run_csv_tasks(client)
+        elif choice == '5':
+            run_csv_orders(client)
+        elif choice == '6':
+            cancel_all_orders(client)
+        elif choice == '7':
             break
         else:
             print(Fore.RED + "Invalid option. Please try again.")
@@ -618,15 +822,18 @@ def main():
             clear_screen()
             display_header()
             print(Fore.GREEN + "Main Menu:")
-            print(Fore.GREEN + "1. Retrieve Info")
-            print(Fore.GREEN + "2. Place Orders")
-            print(Fore.GREEN + "3. Exit")
+            print(Fore.GREEN + "1. Run CSV Orders (Immediate Execution)")
+            print(Fore.GREEN + "2. Retrieve Info")
+            print(Fore.GREEN + "3. Place Orders")
+            print(Fore.GREEN + "4. Exit")
             choice = input(Fore.YELLOW + "Select option: ").strip()
             if choice == '1':
-                info_menu(client)
+                run_csv_orders(client)
             elif choice == '2':
-                order_menu(client)
+                info_menu(client)
             elif choice == '3':
+                order_menu(client)
+            elif choice == '4':
                 print(Fore.GREEN + "Exiting program...")
                 sys.exit(0)
             else:
