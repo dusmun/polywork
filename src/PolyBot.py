@@ -120,11 +120,13 @@ def filter_markets(client):
         date_filter = input(Fore.YELLOW + "Enter end date (YYYY-MM-DD): ").strip()
         date_filter = datetime.strptime(date_filter, "%Y-%m-%d").date()
         filtered = []
+        today = datetime.now().date()
         for m in markets:
             date = m.get("end_date_iso")
             if date:
                 date = datetime.strptime(date[:10], "%Y-%m-%d").date()
-                if date_filter >= date >= datetime.now().date():
+                # Filter for events ending between now and the provided date
+                if today <= date <= date_filter:
                     print(Fore.CYAN + f"Event: {m.get('market_slug', 'N/A')} | End Date: {date}")
                     filtered.append(m)
         if not filtered:
@@ -809,13 +811,13 @@ def main():
         client = ClobClient(
             host=os.getenv("POLYMARKET_HOST"),
             key=os.getenv("POLYMARKET_KEY"),
-            chain_id=137,
+            chain_id=AGON,
             creds=ApiCreds(
                 api_key=os.getenv("POLYMARKET_API_KEY"),
                 api_secret=os.getenv("POLYMARKET_API_SECRET"),
                 api_passphrase=os.getenv("POLYMARKET_API_PASSPHRASE")
             ),
-            signature_type=1,
+            signature_type=2,
             funder=os.getenv("POLYMARKET_PROXY_ADDRESS")
         )
         while True:
